@@ -19,6 +19,7 @@
 2.10.1-IB
 <ul>
 <li>Switch to newer sonar API (6.7 -> 8.5)</li>
+<li>Add Git branch support</li>
 </ul>
 </p>
 <p>
@@ -346,6 +347,7 @@
     <idea-version since-build="212" /> <!-- IntelliJ IDEA v.2020.2-->
 
     <depends>com.intellij.modules.lang</depends>
+    <depends>Git4Idea</depends>
 
     <projectListeners>
         <listener class="org.intellij.sonar.DocumentChangeListener"
