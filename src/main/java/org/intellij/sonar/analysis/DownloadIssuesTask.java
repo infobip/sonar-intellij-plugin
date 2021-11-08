@@ -3,6 +3,7 @@ package org.intellij.sonar.analysis;
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Maps;
+import com.intellij.dvcs.repo.VcsRepositoryManager;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
@@ -13,6 +14,7 @@ import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.project.ProjectManager;
+import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.psi.PsiFile;
 import git4idea.repo.GitRepositoryManager;
 import org.intellij.sonar.console.SonarConsole;
@@ -78,25 +80,33 @@ public class DownloadIssuesTask implements Runnable {
       sonarConsole.info("P: " + p.getBasePath());
 
       for(Module m : ModuleManager.getInstance(p).getModules()){
+          var rootMan = ModuleRootManager.getInstance(m);
+          for(var x : rootMan.getContentRoots()){
+              sonarConsole.info("X: " + x.getName());
+              sonarConsole.info("X: " + x.getPath());
+              sonarConsole.info("X: " + x.getCanonicalPath());
+              sonarConsole.info("X: " + x.getCanonicalFile());
+              var repoManager = VcsRepositoryManager.getInstance(p);
+              var repo = repoManager.getRepositoryForRoot(x);
+              if (repo != null) {
+                  sonarConsole.info("MR: " + repo.getCurrentBranchName());
+              }
+          }
+
           sonarConsole.info("M: " + m.getName());
           sonarConsole.info("M: " + m.getModuleFilePath());
-          var repo = GitRepositoryManager.getInstance(p).getRepositoryForFile(m.getModuleFile());
-          if (repo != null) {
-              sonarConsole.info("MR: " + repo.getCurrentBranchName());
-          }
       }
-      var repos = GitRepositoryManager.getInstance(p).getRepositories();
+      var repos = VcsRepositoryManager.getInstance(p).getRepositories();
       for(var repo : repos) {
           sonarConsole.info("BA: " + repo.getCurrentBranchName());
           sonarConsole.info("BB: " + repo.getVcs().getName());
-          sonarConsole.info("BC: " + repo.getVcs().getDisplayName());
-          sonarConsole.info("BC: " + repo.getVcs().getShortName());
           sonarConsole.info("BD: " + repo.getProject().getName());
           sonarConsole.info("BE: " + repo.getProject().getProjectFile().getName());
           sonarConsole.info("BF: " + repo.getProject().getProjectFile().getPath());
           sonarConsole.info("BG: " + repo.getProject().getProjectFile().getUrl());
           sonarConsole.info("BH: " + repo.getProject().getProjectFile().getPresentableName());
           sonarConsole.info("BI: " + repo.getProject().getProjectFile().getPresentableUrl());
+          sonarConsole.info("ROOT:" + repo.getRoot());
       }
   }
 
@@ -106,9 +116,10 @@ public class DownloadIssuesTask implements Runnable {
 
       Project p = enrichedSettings.project;
 
-      var associatedModule = Arrays.stream(ModuleManager.getInstance(p).getModules()).filter(module -> projectName.equals(module.getName())).findFirst().get();
-      sonarConsole.info("Found module: [" + associatedModule.getName() + "]");
-      var repoForModule = GitRepositoryManager.getInstance(p).getRepositoryForFile(associatedModule.getModuleFile());
+      var associatedModule = Arrays.stream(ModuleManager.getInstance(p).getModules()).flatMap(module -> Arrays.stream(ModuleRootManager.getInstance(module).getContentRoots()).sequential())
+              .filter(mRoot -> projectName.equals(mRoot.getName())).findFirst().get();
+      sonarConsole.info("Found module: [" + associatedModule + "]");
+      var repoForModule = VcsRepositoryManager.getInstance(p).getRepositoryForRoot(associatedModule);
       if (repoForModule != null) {
         var foundBranch = repoForModule.getCurrentBranchName();
         sonarConsole.info("Found branch: [" + foundBranch + "]");
