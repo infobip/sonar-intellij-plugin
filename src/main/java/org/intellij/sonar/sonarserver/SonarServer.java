@@ -50,7 +50,6 @@ public class SonarServer {
 
     public Rule getRule(String organization, String key) {
         ShowRequest rq = new ShowRequest();
-        rq.setOrganization(organization);
         rq.setKey(key);
         Rules.Rule rule = sonarClient.rules().show(rq).getRule();
         return new Rule(rule.getKey(), rule.getName(), rule.getSeverity(), rule.getLang(), rule.getLangName(), rule.getHtmlDesc());
@@ -87,7 +86,6 @@ public class SonarServer {
                 .setPs("500"); //-1 is not allowed, neither int max. The limit is 500.
 
         addSearchParameter(projectNameFilter, query::setQ);
-        addSearchParameter(organization, query::setOrganization);
 
         List<Components.Component> components = new ArrayList<>();
 
@@ -125,7 +123,6 @@ public class SonarServer {
         if(branchName != null) {
             query.setBranch(branchName);
         }
-        addSearchParameter(organization, query::setOrganization);
         IssuesService issuesService = sonarClient.issues();
         SearchWsResponse response = issuesService.search(query);
         builder.addAll(response.getIssuesList());
