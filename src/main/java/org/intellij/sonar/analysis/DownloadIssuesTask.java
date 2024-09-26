@@ -3,29 +3,29 @@ package org.intellij.sonar.analysis;
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Maps;
+import com.intellij.dvcs.repo.VcsRepositoryManager;
 import com.intellij.notification.Notification;
 import com.intellij.notification.NotificationType;
 import com.intellij.notification.Notifications;
+import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.module.Module;
+import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.project.ProjectManager;
+import com.intellij.openapi.roots.ModuleRootManager;
 import com.intellij.psi.PsiFile;
+import git4idea.repo.GitRepositoryManager;
 import org.intellij.sonar.console.SonarConsole;
 import org.intellij.sonar.index.IssuesByFileIndexer;
 import org.intellij.sonar.index.SonarIssue;
-import org.intellij.sonar.persistence.IssuesByFileIndexProjectService;
-import org.intellij.sonar.persistence.Resource;
-import org.intellij.sonar.persistence.Settings;
-import org.intellij.sonar.persistence.SonarServerConfig;
-import org.intellij.sonar.persistence.SonarServers;
+import org.intellij.sonar.persistence.*;
 import org.intellij.sonar.sonarserver.SonarServer;
 import org.intellij.sonar.util.DurationUtil;
 import org.sonarqube.ws.Issues.Issue;
 
-import java.util.AbstractCollection;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class DownloadIssuesTask implements Runnable {
@@ -59,18 +59,80 @@ public class DownloadIssuesTask implements Runnable {
   public void run() {
     final SonarServer sonarServer = SonarServer.create(sonarServerConfig);
     final long startTime = System.currentTimeMillis();
+    inspectBranchNames();
     for (String resourceKey : resourceKeys) {
-      final String downloadingIssuesMessage = String.format("Downloading issues for SonarQube resource %s",resourceKey);
+      final String branchName = getBranchName(resourceKey);
+      final String downloadingIssuesMessage = String.format("Downloading issues for SonarQube resource %s[%s]",resourceKey, branchName);
       sonarConsole.info(downloadingIssuesMessage);
-        tryDownloadingIssues(sonarServer, resourceKey);
+        tryDownloadingIssues(sonarServer, resourceKey, branchName);
     }
     onSuccess(startTime);
   }
 
-    private void tryDownloadingIssues(SonarServer sonarServer, String resourceKey) {
+  private void inspectBranchNames(){
+      Module m1 = enrichedSettings.module;
+      if (m1 != null) {
+          sonarConsole.info("M1: " + m1.getName());
+          sonarConsole.info("M1: " + m1.getModuleFilePath());
+      }
+      Project p = enrichedSettings.project;
+      sonarConsole.info("P: " + p.getName());
+      sonarConsole.info("P: " + p.getBasePath());
+
+      for(Module m : ModuleManager.getInstance(p).getModules()){
+          var rootMan = ModuleRootManager.getInstance(m);
+          for(var x : rootMan.getContentRoots()){
+              sonarConsole.info("X: " + x.getName());
+              sonarConsole.info("X: " + x.getPath());
+              sonarConsole.info("X: " + x.getCanonicalPath());
+              sonarConsole.info("X: " + x.getCanonicalFile());
+              var repoManager = VcsRepositoryManager.getInstance(p);
+              var repo = repoManager.getRepositoryForRoot(x);
+              if (repo != null) {
+                  sonarConsole.info("MR: " + repo.getCurrentBranchName());
+              }
+          }
+
+          sonarConsole.info("M: " + m.getName());
+          sonarConsole.info("M: " + m.getModuleFilePath());
+      }
+      var repos = VcsRepositoryManager.getInstance(p).getRepositories();
+      for(var repo : repos) {
+          sonarConsole.info("BA: " + repo.getCurrentBranchName());
+          sonarConsole.info("BB: " + repo.getVcs().getName());
+          sonarConsole.info("BD: " + repo.getProject().getName());
+          sonarConsole.info("BE: " + repo.getProject().getProjectFile().getName());
+          sonarConsole.info("BF: " + repo.getProject().getProjectFile().getPath());
+          sonarConsole.info("BG: " + repo.getProject().getProjectFile().getUrl());
+          sonarConsole.info("BH: " + repo.getProject().getProjectFile().getPresentableName());
+          sonarConsole.info("BI: " + repo.getProject().getProjectFile().getPresentableUrl());
+          sonarConsole.info("ROOT:" + repo.getRoot());
+      }
+  }
+
+  private String getBranchName(String projectKey){
+      String projectName = projectKey.substring(projectKey.indexOf(":")+1);
+      sonarConsole.info("Looking for current branch in [" + projectName + "]");
+
+      Project p = enrichedSettings.project;
+
+      var associatedModule = Arrays.stream(ModuleManager.getInstance(p).getModules()).flatMap(module -> Arrays.stream(ModuleRootManager.getInstance(module).getContentRoots()).sequential())
+              .filter(mRoot -> projectName.equals(mRoot.getName())).findFirst().get();
+      sonarConsole.info("Found module: [" + associatedModule + "]");
+      var repoForModule = VcsRepositoryManager.getInstance(p).getRepositoryForRoot(associatedModule);
+      if (repoForModule != null) {
+        var foundBranch = repoForModule.getCurrentBranchName();
+        sonarConsole.info("Found branch: [" + foundBranch + "]");
+        return foundBranch;
+      }
+
+      return "";
+  }
+
+    private void tryDownloadingIssues(SonarServer sonarServer, String resourceKey, String branchName) {
         ImmutableList<Issue> issues;
         try {
-            issues = sonarServer.getAllIssuesFor(resourceKey, sonarServerConfig.getOrganization());
+            issues = sonarServer.getAllIssuesFor(resourceKey, sonarServerConfig.getOrganization(), branchName);
             downloadedIssuesByResourceKey.put(resourceKey,issues);
         } catch (Exception e) {
             sonarConsole.error(e.getMessage());

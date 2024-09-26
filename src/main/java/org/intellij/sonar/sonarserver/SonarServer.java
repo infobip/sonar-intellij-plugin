@@ -7,8 +7,8 @@ import com.intellij.notification.Notifications;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import org.intellij.sonar.configuration.SonarQualifier;
-import org.intellij.sonar.persistence.Resource;
-import org.intellij.sonar.persistence.SonarServerConfig;
+import org.intellij.sonar.console.SonarConsole;
+import org.intellij.sonar.persistence.*;
 import org.intellij.sonar.util.ProgressIndicatorUtil;
 import org.sonarqube.ws.*;
 import org.sonarqube.ws.Issues.Issue;
@@ -50,7 +50,6 @@ public class SonarServer {
 
     public Rule getRule(String organization, String key) {
         ShowRequest rq = new ShowRequest();
-        rq.setOrganization(organization);
         rq.setKey(key);
         Rules.Rule rule = sonarClient.rules().show(rq).getRule();
         return new Rule(rule.getKey(), rule.getName(), rule.getSeverity(), rule.getLang(), rule.getLangName(), rule.getHtmlDesc());
@@ -87,7 +86,6 @@ public class SonarServer {
                 .setPs("500"); //-1 is not allowed, neither int max. The limit is 500.
 
         addSearchParameter(projectNameFilter, query::setQ);
-        addSearchParameter(organization, query::setOrganization);
 
         List<Components.Component> components = new ArrayList<>();
 
@@ -118,12 +116,13 @@ public class SonarServer {
         return sonarClient.components().tree(query).getComponentsList();
     }
 
-    public ImmutableList<Issue> getAllIssuesFor(String resourceKey, String organization) {
+    public ImmutableList<Issue> getAllIssuesFor(String resourceKey, String organization, String branchName) {
         final ImmutableList.Builder<Issue> builder = ImmutableList.builder();
         SearchRequest query = new SearchRequest();
         query.setComponentKeys(singletonList(resourceKey)).setPs("500").setResolved("false");
-        //query.setProjectKeys(singletonList(resourceKey));
-        addSearchParameter(organization, query::setOrganization);
+        if(branchName != null) {
+            query.setBranch(branchName);
+        }
         IssuesService issuesService = sonarClient.issues();
         SearchWsResponse response = issuesService.search(query);
         builder.addAll(response.getIssuesList());
@@ -151,7 +150,7 @@ public class SonarServer {
             Notifications.Bus.notify(new Notification(
                     "SonarQube","SonarQube",
                     String.format("Your project has %d issues, downloading instead the maximum amount of %s. ",
-                            paging.getTotal(), DOWNLOAD_LIMIT),
+                                  paging.getTotal(), DOWNLOAD_LIMIT),
                     NotificationType.WARNING
             ));
         }
